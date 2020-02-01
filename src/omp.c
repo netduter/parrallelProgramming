@@ -1,0 +1,123 @@
+#include <omp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define ID_LENGTH 20
+#define LINE_LENGTH 300
+
+#ifndef THREADS
+#define THREADS (argc > 3 ? strtol(argv[3], NULL, 10) : 1)
+#endif /* ifndef THREADS */
+
+int count_lines(FILE *fp) {
+    int cnt = 0;
+    size_t length;
+    char *tmp = malloc(LINE_LENGTH);
+    while(getline(&tmp, &length, fp) != EOF) ++cnt;
+    free(tmp);
+    return cnt;
+}
+
+double get_gc_content(char *sequence) {
+    size_t i;
+    int gc = 0, at = 0;
+
+    for(i = 0; i < strlen(sequence); ++i) {
+        switch(sequence[i]) {
+            case 'G':
+            case 'C':
+                ++gc;
+                break;
+            case 'A':
+            case 'T':
+                ++at;
+                break;
+        }
+    }
+
+    return at + gc <= 0 ? -1.0 : 1.0 * gc / (at + gc);
+}
+
+void calculate_sequences(char *fname, int lines) {
+    int curr = 0, seqns = lines / 4,
+        num = omp_get_thread_num(),
+        threads = omp_get_num_threads(),
+        start = seqns / threads * num * 4,
+        end = threads - 1 == num ? lines : \
+              start + seqns / threads * 4;
+
+    FILE *fin = fopen(fname, "r");
+    char *outfile = malloc(32);
+    snprintf(outfile, 32, "results%d.txt", num);
+    FILE *fout = fopen(outfile, "w");
+
+    size_t length;
+    char *id = malloc(ID_LENGTH);
+    char *buffer = malloc(LINE_LENGTH);
+
+    while(curr++ != start)
+        getline(&buffer, &length, fin);
+
+    for(; curr < end; curr += 4) {
+        getline(&id, &length, fin);
+        id[strlen(id) - 1] = '\0';
+
+        getline(&buffer, &length, fin);
+        fprintf(fout, "%s\t%0.9lf\n", id, get_gc_content(buffer));
+
+        // skip next lines
+        getline(&buffer, &length, fin);
+        getline(&buffer, &length, fin);
+    }
+
+    fclose(fin);
+    fclose(fout);
+    free(id);
+    free(buffer);
+    free(outfile);
+}
+
+void merge_files(char *fname, int threads) {
+    size_t len;
+    char *tmp = malloc(32);
+    char *buffer = malloc(LINE_LENGTH);
+    FILE *fout = fopen(fname, "w");
+
+    for(int i = 0; i < threads; ++i) {
+        snprintf(tmp, 32, "results%d.txt", i);
+        FILE *fin = fopen(tmp, "r");
+
+        while(getline(&buffer, &len, fin) != EOF)
+            fprintf(fout, "%s", buffer);
+
+        fclose(fin);
+        remove(tmp);
+    }
+
+    fclose(fout);
+    free(buffer);
+    free(tmp);
+}
+
+int main(int argc, char** argv){
+    if(argc < 3) {
+        fprintf(stderr, "usage: <input> <output> [threads]\n");
+        return 1;
+    }
+
+    omp_set_num_threads(THREADS);
+    FILE *fin = fopen(argv[1], "r");
+    if(fin == NULL) {
+        fprintf(stderr, "File '%s' not found!\n", argv[1]);
+        return 2;
+    }
+    int lines = count_lines(fin);
+    fclose(fin);
+
+    #pragma omp parallel
+    calculate_sequences(argv[1], lines);
+
+    merge_files(argv[2], THREADS);
+    return 0;
+}
