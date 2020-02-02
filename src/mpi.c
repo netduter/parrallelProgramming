@@ -6,6 +6,12 @@
 #define ID_LENGTH 20
 #define LINE_LENGTH 300
 
+/**
+ * Count the number of lines in a file.
+ *
+ * @param fp The file pointer to read from.
+ * @return The number of lines in the file.
+ */
 int count_lines(FILE *fp) {
     int cnt = 0;
     size_t length;
@@ -15,6 +21,12 @@ int count_lines(FILE *fp) {
     return cnt;
 }
 
+/**
+ * Fill sequence IDs from a FASTQ file.
+ *
+ * @param fname The name of the file to read from.
+ * @param ids The string that will be filled.
+ */
 void fill_ids(char *fname, char *ids) {
     size_t len;
     FILE *fin = fopen(fname, "r");
@@ -29,6 +41,12 @@ void fill_ids(char *fname, char *ids) {
     free(buffer);
 }
 
+/**
+ * Calculate the GC content of a sequence.
+ *
+ * @param sequence A sequence of nucleotides.
+ * @return The ratio of G or C nucleotides.
+ */
 double get_gc_content(char *sequence) {
     size_t i;
     int gc = 0, at = 0;
@@ -49,6 +67,12 @@ double get_gc_content(char *sequence) {
     return at + gc <= 0 ? -1.0 : 1.0 * gc / (at + gc);
 }
 
+/**
+ * Create a message that will be sent through MPI.
+ *
+ * @param fname The name of a file to read from.
+ * @param message The message that will be created.
+ */
 void create_message(char *fname, char *message) {
     size_t size;
     int cntr = 0;
@@ -67,6 +91,15 @@ void create_message(char *fname, char *message) {
     fclose(fin);
 }
 
+/**
+ * Send the calculated results using MPI_Send.
+ *
+ * @param buffer A buffer of sequences.
+ * @param lines The number of lines in the file.
+ * @param rank The rank of the current process.
+ * @param nprocs The number of process.
+ * @param gc_cnt A counter of GC ratios.
+ */
 void send_results(char *const buffer, int lines, int rank,
                   int nprocs, int gc_cnt) {
     int seqs = lines / 4;
@@ -84,14 +117,23 @@ void send_results(char *const buffer, int lines, int rank,
     free(res);
 }
 
-void calculate(char *message, char *ids, int nprocs, int lines, char *fname) {
+/**
+ * Calculate the GC content of some sequences.
+ *
+ * @param buffer A buffer containing the sequences.
+ * @param ids The IDs of the sequences.
+ * @param nprocs The number of processes.
+ * @param lines The number of lines in the input file.
+ * @param fname The file name to write to.
+ */
+void calculate(char *buffer, char *ids, int nprocs, int lines, char *fname) {
     char tmp[20] = {0};
     FILE *fout = fopen(fname, "w");
     int seqs = lines / (4 * nprocs);
 
     double gc_content;
     for(int i = 0; i < seqs; ++i) {
-        gc_content = get_gc_content(message + LINE_LENGTH * i);
+        gc_content = get_gc_content(buffer + LINE_LENGTH * i);
         memcpy(tmp, ids + ID_LENGTH * i, ID_LENGTH);
         fprintf(fout, "%s\t%0.9lf\n", tmp, gc_content);
         memset(tmp, 0, sizeof tmp);
@@ -99,12 +141,26 @@ void calculate(char *message, char *ids, int nprocs, int lines, char *fname) {
     fclose(fout);
 }
 
-void write_results(char *ids, double *res, char *fname, int gc_cnt) {
+/**
+ * Write the calculated results to a file.
+ *
+ * @param ids The IDs of the sequences.
+ * @param res The GC content results.
+ * @param fname The file name to write to.
+ * @param lines The number of lines in the file.
+ * @param rank The rank of the current process.
+ * @param nprocs The number of process.
+ * @param gc_cnt A counter of GC ratios.
+ */
+void write_results(char *ids, double *res, char *fname, int lines,
+                   int rank, int nprocs, int gc_cnt) {
     char tmp[ID_LENGTH] = {0};
     FILE *fout = fopen(fname, "a");
+    int seqns = lines / 4 / nprocs;
+    char *start = ids + seqns * ID_LENGTH * rank;
 
     for(int i = 0; res[i] != 0 && i < gc_cnt; ++i) {
-        memcpy(tmp, ids + ID_LENGTH * i, ID_LENGTH);
+        memcpy(tmp, start + ID_LENGTH * i, ID_LENGTH);
         fprintf(fout, "%s\t%0.9lf\n", tmp, res[i]);
         memset(tmp, 0, ID_LENGTH);
     }
@@ -152,7 +208,7 @@ int main(int argc, char **argv) {
         for(int i = 0; i < nprocs - 1; ++i) {
             MPI_Recv(results, gc_cnt, MPI_DOUBLE,
                      i + 1, 0, MPI_COMM_WORLD, &stat);
-            write_results(ids, results, argv[2], gc_cnt);
+            write_results(ids, results, argv[2], lines, rank, nprocs, gc_cnt);
         }
         free(ids);
         free(results);

@@ -7,9 +7,15 @@
 #define LINE_LENGTH 300
 
 #ifndef NPROC
-#define NPROC 1
+#define NPROC (-1)
 #endif /* ifndef NPROC */
 
+/**
+ * Count the number of lines in a file.
+ *
+ * @param fp The file pointer to read from.
+ * @return The number of lines in the file.
+ */
 int count_lines(FILE *fp) {
     int cnt = 0;
     size_t length;
@@ -19,6 +25,12 @@ int count_lines(FILE *fp) {
     return cnt;
 }
 
+/**
+ * Calculate the GC content of a sequence.
+ *
+ * @param sequence A sequence of nucleotides.
+ * @return The ratio of G or C nucleotides.
+ */
 double get_gc_content(char *sequence) {
     size_t i;
     int gc = 0, at = 0;
@@ -39,6 +51,12 @@ double get_gc_content(char *sequence) {
     return at + gc <= 0 ? -1.0 : 1.0 * gc / (at + gc);
 }
 
+/**
+ * Calculate sequences in parallel.
+ *
+ * @param fname The name of a file to read from.
+ * @param lines The number of lines of the file.
+ */
 void calculate_sequences(char *fname, int lines) {
     int curr = 0, seqns = lines / 4,
         num = omp_get_thread_num(),
@@ -78,6 +96,12 @@ void calculate_sequences(char *fname, int lines) {
     free(outfile);
 }
 
+/**
+ * Merge the temporary files into one.
+ *
+ * @param fname The name of the file to write to.
+ * @param threads The number of threads available.
+ */
 void merge_files(char *fname, int threads) {
     size_t len;
     char *tmp = malloc(32);
@@ -116,6 +140,10 @@ int main(int argc, char** argv){
 
     int threads = argc < 4 ? NPROC : \
                   (int) strtol(argv[3], NULL, 10);
+    if(threads < 0) {
+        fprintf(stderr, "Threads can't be <0 (%d).", threads);
+        return 3;
+    }
     omp_set_num_threads(threads);
 
     #pragma omp parallel
