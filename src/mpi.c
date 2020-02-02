@@ -27,11 +27,12 @@ int count_lines(FILE *fp) {
  * @param fname The name of the file to read from.
  * @param ids The string that will be filled.
  */
-void fill_ids(char *fname, char *ids) {
-    size_t len;
-    FILE *fin = fopen(fname, "r");
-    char *buffer = malloc(LINE_LENGTH);
+void fill_ids(char *file, char *ids) {
+    FILE *fin = fopen(file, "r");
     int ln_cnt = 0, id_cnt = 0;
+    char *buffer = malloc(LINE_LENGTH);
+    size_t len;
+
     while(getline(&buffer, &len, fin) != EOF) {
         if(ln_cnt++ % 4 == 0) {
             buffer[strlen(buffer) - 1] = '\0';
@@ -48,10 +49,9 @@ void fill_ids(char *fname, char *ids) {
  * @return The ratio of G or C nucleotides.
  */
 double get_gc_content(char *sequence) {
-    size_t i;
     int gc = 0, at = 0;
 
-    for(i = 0; i < strlen(sequence); ++i) {
+    for(size_t i = 0; i < strlen(sequence); ++i) {
         switch(sequence[i]) {
             case 'G':
             case 'C':
@@ -64,20 +64,21 @@ double get_gc_content(char *sequence) {
         }
     }
 
-    return at + gc <= 0 ? -1.0 : 1.0 * gc / (at + gc);
+    return (gc + at > 0) ? 1.0 * gc / (gc + at) : -1.0;
 }
 
 /**
  * Create a message that will be sent through MPI.
  *
- * @param fname The name of a file to read from.
  * @param message The message that will be created.
+ * @param fname The name of a file to read from.
  */
-void create_message(char *fname, char *message) {
-    size_t size;
-    int cntr = 0;
+void create_message(char *message, char *fname) {
     FILE *fin = fopen(fname, "r");
     char *buffer = malloc(LINE_LENGTH);
+    int cntr = 0;
+    size_t size;
+
     while(getline(&buffer, &size, fin) != EOF) {
         getline(&buffer, &size, fin);
         buffer[strlen(buffer) - 1] = '\0';
@@ -87,8 +88,9 @@ void create_message(char *fname, char *message) {
         getline(&buffer, &size, fin);
         getline(&buffer, &size, fin);
     }
-    free(buffer);
+
     fclose(fin);
+    free(buffer);
 }
 
 /**
@@ -100,15 +102,14 @@ void create_message(char *fname, char *message) {
  * @param nprocs The number of process.
  * @param gc_cnt A counter of GC ratios.
  */
-void send_results(char *const buffer, int lines, int rank,
-                  int nprocs, int gc_cnt) {
-    int seqs = lines / 4;
+void send_results(char *const buffer, int lines,
+                  int rank, int nprocs, int gc_cnt) {
+    char *start = buffer + lines / 4 / nprocs * rank * LINE_LENGTH;
+    char *end = rank == nprocs - 1 ? \
+                buffer + lines / 4 * LINE_LENGTH : \
+                start + lines / 4 / nprocs * LINE_LENGTH;
     double *res = malloc(gc_cnt * sizeof (double));
     memset(res, 0, gc_cnt * sizeof (double));
-    char *start = buffer + seqs / nprocs * rank * LINE_LENGTH;
-    char *end = rank == nprocs - 1 ? \
-                buffer + seqs * LINE_LENGTH : \
-                start + seqs / nprocs * LINE_LENGTH;
 
     for(int cntr = 0; start < end; start += LINE_LENGTH)
         res[cntr++] = get_gc_content(start);
@@ -127,16 +128,14 @@ void send_results(char *const buffer, int lines, int rank,
  * @param fname The file name to write to.
  */
 void calculate(char *buffer, char *ids, int nprocs, int lines, char *fname) {
-    char tmp[20] = {0};
     FILE *fout = fopen(fname, "w");
-    int seqs = lines / (4 * nprocs);
+    char tmp[ID_LENGTH] = {0};
 
-    double gc_content;
-    for(int i = 0; i < seqs; ++i) {
-        gc_content = get_gc_content(buffer + LINE_LENGTH * i);
+    for(int i = 0, n = lines / 4 / nprocs; i < n; ++i) {
         memcpy(tmp, ids + ID_LENGTH * i, ID_LENGTH);
-        fprintf(fout, "%s\t%0.9lf\n", tmp, gc_content);
-        memset(tmp, 0, sizeof tmp);
+        fprintf(fout, "%s\t%0.9lf\n", tmp,
+                get_gc_content(buffer + LINE_LENGTH * i));
+        memset(tmp, 0, ID_LENGTH);
     }
     fclose(fout);
 }
@@ -147,19 +146,18 @@ void calculate(char *buffer, char *ids, int nprocs, int lines, char *fname) {
  * @param ids The IDs of the sequences.
  * @param res The GC content results.
  * @param fname The file name to write to.
- * @param lines The number of lines in the file.
  * @param rank The rank of the current process.
  * @param nprocs The number of process.
+ * @param lines The number of lines in the file.
  * @param gc_cnt A counter of GC ratios.
  */
-void write_results(char *ids, double *res, char *fname, int lines,
-                   int rank, int nprocs, int gc_cnt) {
-    char tmp[ID_LENGTH] = {0};
+void write_results(char *ids, double *res, char *fname,
+                   int rank, int nprocs, int lines, int gc_cnt) {
     FILE *fout = fopen(fname, "a");
-    int seqns = lines / 4 / nprocs;
-    char *start = ids + seqns * ID_LENGTH * rank;
+    char tmp[ID_LENGTH] = {0};
+    char *start = ids + lines / 4 / nprocs * ID_LENGTH * rank;
 
-    for(int i = 0; res[i] != 0 && i < gc_cnt; ++i) {
+    for(int i = 0; i < gc_cnt && res[i] != 0; ++i) {
         memcpy(tmp, start + ID_LENGTH * i, ID_LENGTH);
         fprintf(fout, "%s\t%0.9lf\n", tmp, res[i]);
         memset(tmp, 0, ID_LENGTH);
@@ -174,7 +172,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    int rank, nprocs;
     FILE *fin = fopen(argv[1], "r");
     if(fin == NULL) {
         fprintf(stderr, "File '%s' not found!\n", argv[1]);
@@ -183,6 +180,7 @@ int main(int argc, char **argv) {
     int lines = count_lines(fin);
     fclose(fin);
 
+    int rank, nprocs;
     MPI_Status stat;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -199,7 +197,8 @@ int main(int argc, char **argv) {
         memset(results, 0, lines / 4 * LINE_LENGTH * sizeof (double));
         char *ids = malloc((lines / 4 + (lines / 4) % nprocs) * ID_LENGTH);
         fill_ids(argv[1], ids);
-        create_message(argv[1], message);
+
+        create_message(message, argv[1]);
 
         MPI_Bcast(message, lines / 4 * LINE_LENGTH,
                   MPI_CHAR, 0, MPI_COMM_WORLD);
@@ -208,7 +207,7 @@ int main(int argc, char **argv) {
         for(int i = 0; i < nprocs - 1; ++i) {
             MPI_Recv(results, gc_cnt, MPI_DOUBLE,
                      i + 1, 0, MPI_COMM_WORLD, &stat);
-            write_results(ids, results, argv[2], lines, rank, nprocs, gc_cnt);
+            write_results(ids, results, argv[2], i + 1, nprocs, lines, gc_cnt);
         }
         free(ids);
         free(results);
@@ -219,5 +218,6 @@ int main(int argc, char **argv) {
     }
 
     MPI_Finalize();
+    free(message);
     return 0;
 }

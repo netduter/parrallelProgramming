@@ -5,6 +5,7 @@ MPICC  = mpicc
 MPIRUN = mpirun
 HOSTS  = ~/hostfiles
 NPROC  = 10
+SPHINX = sphinx-build
 HYPERF = hyperfine
 MKDIR  = mkdir -p
 CLEAN  = rm -rf
@@ -42,6 +43,11 @@ bench: all
 		"$(MPIRUN) -np $(NPROC) -hostfile $(HOSTS) \
 			build/mpi data/$(FASTQ).fastq out/mpi-$(FASTQ).tsv"
 
+## Generate the report
+report:
+	@$(SPHINX) -M latexpdf docs docs/_build $(SPHINXOPTS)
+	@cp docs/_build/latex/Report.pdf Nikolaos_Kaponikolos_21628-Ioannis_Somos_21685.pdf
+
 ## Remove build files
 .PHONY: clean
-clean: ; @$(CLEAN) build
+clean: ; @$(CLEAN) build docs/_build

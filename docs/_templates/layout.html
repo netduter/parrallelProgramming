@@ -1,0 +1,17 @@
+{%- extends '!layout.html' %}
+{%- block extrahead %}
+  {{ super() }}
+  <style type="text/css">
+    body { font-family: 'Lato', 'Helvetica', sans-serif }
+    code, pre { font-family: 'Hack', monospace }
+    pre { padding: 7px 12.5px }
+    h1, th, td:not(.code) { text-align: center !important }
+    table:not(.highlighttable) { page-break-inside: avoid }
+  </style>
+{% endblock %}
+{%- block footer %}
+  <div class="footer">
+    Χαροκόπειο Πανεπιστήμιο 2019-2020 |
+    Νικόλαος Καπονικολός (21628), Ιωάννης Σομός (21685)
+  </div>
+{% endblock %}
