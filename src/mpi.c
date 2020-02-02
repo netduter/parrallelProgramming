@@ -73,8 +73,9 @@ void send_results(char *const buffer, int lines, int rank,
     double *res = malloc(gc_cnt * sizeof (double));
     memset(res, 0, gc_cnt * sizeof (double));
     char *start = buffer + seqs / nprocs * rank * LINE_LENGTH;
-    char *end = rank == nprocs - 1 ? buffer + seqs * LINE_LENGTH :
-                                     start + seqs / nprocs * LINE_LENGTH;
+    char *end = rank == nprocs - 1 ? \
+                buffer + seqs * LINE_LENGTH : \
+                start + seqs / nprocs * LINE_LENGTH;
 
     for(int cntr = 0; start < end; start += LINE_LENGTH)
         res[cntr++] = get_gc_content(start);
@@ -98,17 +99,14 @@ void calculate(char *message, char *ids, int nprocs, int lines, char *fname) {
     fclose(fout);
 }
 
-void write_results(char *ids, double *res, char *fname, int rank, int nprocs,
-                   int lines) {
-    char tmp[20] = {0};
+void write_results(char *ids, double *res, char *fname, int gc_cnt) {
+    char tmp[ID_LENGTH] = {0};
     FILE *fout = fopen(fname, "a");
-    int seqs = lines / 4, chunk = seqs / nprocs;
-    if(rank == nprocs - 1) chunk += seqs % nprocs;
 
-    for(int i = 0; i < chunk; ++i) {
-        memcpy(tmp, ids + rank * ID_LENGTH * (i + chunk), ID_LENGTH);
+    for(int i = 0; res[i] != 0 && i < gc_cnt; ++i) {
+        memcpy(tmp, ids + ID_LENGTH * i, ID_LENGTH);
         fprintf(fout, "%s\t%0.9lf\n", tmp, res[i]);
-        memset(tmp, 0, sizeof tmp);
+        memset(tmp, 0, ID_LENGTH);
     }
 
     fclose(fout);
@@ -154,12 +152,10 @@ int main(int argc, char **argv) {
         for(int i = 0; i < nprocs - 1; ++i) {
             MPI_Recv(results, gc_cnt, MPI_DOUBLE,
                      i + 1, 0, MPI_COMM_WORLD, &stat);
-            write_results(ids, results, argv[2],
-                          i + 1, nprocs, lines);
+            write_results(ids, results, argv[2], gc_cnt);
         }
         free(ids);
         free(results);
-
     } else {
         MPI_Bcast(message, lines / 4 * LINE_LENGTH,
                   MPI_CHAR, 0, MPI_COMM_WORLD);

@@ -6,9 +6,9 @@
 #define ID_LENGTH 20
 #define LINE_LENGTH 300
 
-#ifndef THREADS
-#define THREADS (argc > 3 ? strtol(argv[3], NULL, 10) : 1)
-#endif /* ifndef THREADS */
+#ifndef NPROC
+#define NPROC 1
+#endif /* ifndef NPROC */
 
 int count_lines(FILE *fp) {
     int cnt = 0;
@@ -106,7 +106,6 @@ int main(int argc, char** argv){
         return 1;
     }
 
-    omp_set_num_threads(THREADS);
     FILE *fin = fopen(argv[1], "r");
     if(fin == NULL) {
         fprintf(stderr, "File '%s' not found!\n", argv[1]);
@@ -115,9 +114,13 @@ int main(int argc, char** argv){
     int lines = count_lines(fin);
     fclose(fin);
 
+    int threads = argc < 4 ? NPROC : \
+                  (int) strtol(argv[3], NULL, 10);
+    omp_set_num_threads(threads);
+
     #pragma omp parallel
     calculate_sequences(argv[1], lines);
 
-    merge_files(argv[2], THREADS);
+    merge_files(argv[2], threads);
     return 0;
 }
